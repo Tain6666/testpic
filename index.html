@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสอบออนไลน์</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; background-color: #f3f4f6; }
+        .hidden { display: none !important; }
+        .timer-circle {
+            width: 60px; height: 60px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; font-weight: bold;
+            border: 4px solid #3b82f6; color: #3b82f6;
+        }
+        .timer-warning { border-color: #ef4444; color: #ef4444; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <script>
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzVDqR_x-T6IfTphgt3jNP6eqNOppCwVwYMoMm1y-f-Mmfb-wm31yHh3uwqSyywuf7E/exec"; // <<< เปลี่ยนตรงนี้
+    </script>
+
+    <div id="app-container" class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6 relative">
+        
+        <div id="page-login">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">ลงทะเบียนเข้าสอบ</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">ชื่อ - นามสกุล</label>
+                    <input type="text" id="inp-name" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="ระบุชื่อของคุณ">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">เบอร์โทรศัพท์</label>
+                    <input type="tel" id="inp-phone" maxlength="10" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0xxxxxxxxx">
+                </div>
+                <button onclick="login()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">เข้าสู่ระบบ</button>
+            </div>
+        </div>
+
+        <div id="page-dashboard" class="hidden text-center">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">ยินดีต้อนรับ</h2>
+            <p id="user-info" class="text-gray-600 mb-6"></p>
+            
+            <button id="btn-start" onclick="startTest()" class="w-full bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600 transition mb-4">เริ่มทำข้อสอบ</button>
+            <button id="btn-check-score" onclick="showMyScore()" class="w-full bg-blue-100 text-blue-700 font-bold py-3 rounded-lg hover:bg-blue-200 transition hidden">ดูคะแนนของฉัน</button>
+        </div>
+
+        <div id="page-quiz" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <span id="q-counter" class="text-gray-500 font-semibold">ข้อที่ 1/30</span>
+                <div id="timer" class="timer-circle">15</div>
+            </div>
+            <h3 id="q-text" class="text-lg font-bold text-gray-800 mb-6 leading-relaxed"></h3>
+            <div id="choices-container" class="space-y-3">
+                </div>
+        </div>
+
+        <div id="page-result" class="hidden text-center">
+            <div class="text-5xl mb-4">🎉</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">ทำข้อสอบเสร็จสิ้น!</h2>
+            <p id="result-name" class="text-gray-600 mb-2"></p>
+            <div class="bg-blue-50 text-blue-800 font-bold text-4xl py-6 rounded-xl my-4">
+                <span id="result-score">0</span> / 30
+            </div>
+        </div>
+
+    </div>
+
+    <button onclick="openLeaderboard()" class="mt-8 text-gray-400 text-sm hover:text-gray-600 underline">ตรวจสอบอันดับ (แอดมิน)</button>
+
+    <script>
+        // State Variables
+        let user = { name: '', phone: '', score: 0 };
+        let questions = [];
+        let currentQIndex = 0;
+        let score = 0;
+        let timerInterval;
+        let timeLeft = 15;
+
+        // Utility: Fetch ข้อมูลจาก GAS
+        async function fetchGAS(action, data = {}) {
+            data.action = action;
+            const params = new URLSearchParams(data);
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: params,
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                });
+                return await response.json();
+            } catch (err) {
+                console.error(err);
+                Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+                return null;
+            }
+        }
+
+        // หน้า UI สลับการแสดงผล
+        function showPage(pageId) {
+            ['page-login', 'page-dashboard', 'page-quiz', 'page-result'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(pageId).classList.remove('hidden');
+        }
+
+        // 1. ตรวจสอบ LocalStorage ตอนโหลดหน้า
+        window.onload = () => {
+            const savedUser = localStorage.getItem('quizUser');
+            if (savedUser) {
+                user = JSON.parse(savedUser);
+                checkUserStatus();
+            }
+        };
+
+        // 2. ล็อกอิน
+        async function login() {
+            const name = document.getElementById('inp-name').value.trim();
+            const phone = document.getElementById('inp-phone').value.trim();
+            
+            if (!name || !phone) return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบ', 'warning');
+            if (!/^0\d{9}$/.test(phone)) return Swal.fire('แจ้งเตือน', 'เบอร์โทรต้องมี 10 หลักและขึ้นต้นด้วย 0', 'warning');
+
+            Swal.fire({ title: 'กำลังเข้าสู่ระบบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            const res = await fetchGAS('login', { name, phone });
+            if (res) {
+                user = { name, phone };
+                localStorage.setItem('quizUser', JSON.stringify(user));
+                
+                if (res.status === 'completed') {
+                    user.score = res.score;
+                    Swal.fire('แจ้งเตือน', 'ท่านได้ทำข้อสอบไปแล้ว!', 'info');
+                    showDashboard(true);
+                } else {
+                    Swal.close();
+                    showDashboard(false);
+                }
+            }
+        }
+
+        async function checkUserStatus() {
+            Swal.fire({ title: 'กำลังตรวจสอบข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            const res = await fetchGAS('login', { name: user.name, phone: user.phone });
+            Swal.close();
+            if (res) {
+                if (res.status === 'completed') {
+                    user.score = res.score;
+                    showDashboard(true);
+                } else {
+                    showDashboard(false);
+                }
+            }
+        }
+
+        function showDashboard(isCompleted) {
+            document.getElementById('user-info').innerText = `${user.name} (${user.phone})`;
+            if (isCompleted) {
+                document.getElementById('btn-start').classList.add('hidden');
+                document.getElementById('btn-check-score').classList.remove('hidden');
+            } else {
+                document.getElementById('btn-start').classList.remove('hidden');
+                document.getElementById('btn-check-score').classList.add('hidden');
+            }
+            showPage('page-dashboard');
+        }
+
+        function showMyScore() {
+            document.getElementById('result-name').innerText = `${user.name} (${user.phone})`;
+            document.getElementById('result-score').innerText = user.score;
+            showPage('page-result');
+        }
+
+        // 3. เริ่มทำข้อสอบ
+        async function startTest() {
+            Swal.fire({ title: 'กำลังโหลดข้อสอบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            const res = await fetchGAS('getQuestions');
+            if (res && res.status === 'success') {
+                questions = res.data;
+                currentQIndex = 0;
+                score = 0;
+                Swal.close();
+                showPage('page-quiz');
+                renderQuestion();
+            }
+        }
+
+        function renderQuestion() {
+            if (currentQIndex >= questions.length) {
+                finishTest();
+                return;
+            }
+
+            const q = questions[currentQIndex];
+            document.getElementById('q-counter').innerText = `ข้อที่ ${currentQIndex + 1}/${questions.length}`;
+            document.getElementById('q-text').innerText = q.question;
+            
+            const container = document.getElementById('choices-container');
+            container.innerHTML = '';
+            
+            q.choices.forEach((choice, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'w-full text-left p-4 border rounded-xl hover:bg-blue-50 hover:border-blue-400 transition mb-2 bg-white';
+                btn.innerText = choice;
+                btn.onclick = () => answerQuestion(index + 1);
+                container.appendChild(btn);
+            });
+
+            startTimer();
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            timeLeft = 15;
+            const timerEl = document.getElementById('timer');
+            timerEl.innerText = timeLeft;
+            timerEl.classList.remove('timer-warning');
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerEl.innerText = timeLeft;
+                if (timeLeft <= 5) timerEl.classList.add('timer-warning');
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    Swal.fire({ title: 'หมดเวลา!', icon: 'warning', timer: 1000, showConfirmButton: false });
+                    setTimeout(() => {
+                        currentQIndex++;
+                        renderQuestion();
+                    }, 1000);
+                }
+            }, 1000);
+        }
+
+        function answerQuestion(choiceNum) {
+            clearInterval(timerInterval);
+            if (choiceNum == questions[currentQIndex].answer) {
+                score++;
+            }
+            currentQIndex++;
+            renderQuestion();
+        }
+
+        // 4. จบข้อสอบและส่งคะแนน
+        async function finishTest() {
+            Swal.fire({ title: 'กำลังบันทึกคะแนน...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            const res = await fetchGAS('saveScore', { name: user.name, phone: user.phone, score: score });
+            if (res && res.status === 'success') {
+                Swal.close();
+                user.score = score;
+                localStorage.setItem('quizUser', JSON.stringify(user));
+                showMyScore();
+            } else {
+                Swal.fire('แจ้งเตือน', res.message || 'เกิดข้อผิดพลาด', 'warning');
+            }
+        }
+
+        // 5. ระบบ Leaderboard แอดมิน
+        async function openLeaderboard() {
+            const { value: password } = await Swal.fire({
+                title: 'รหัสผ่านแอดมิน',
+                input: 'password',
+                inputPlaceholder: 'กรอกรหัสผ่านเพื่อดูคะแนน',
+                showCancelButton: true
+            });
+
+            if (password) {
+                Swal.fire({ title: 'กำลังดึงข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                const res = await fetchGAS('getLeaderboard', { password });
+                Swal.close();
+                
+                if (res && res.status === 'success') {
+                    let html = `<div class="space-y-2 mt-4 text-left">`;
+                    res.data.forEach((u, i) => {
+                        html += `
+                        <div class="flex justify-between items-center bg-gray-50 p-3 rounded border">
+                            <div>
+                                <span class="font-bold text-gray-700">อันดับ ${i+1}</span>
+                                <span id="name-${i}" class="ml-2 text-gray-400 blur-sm select-none transition-all duration-300">${u.name}</span>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <span class="font-bold text-blue-600">${u.score} คะแนน</span>
+                                <button onclick="document.getElementById('name-${i}').classList.remove('blur-sm', 'text-gray-400')" class="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300">เปิดดูชื่อ</button>
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                    
+                    Swal.fire({ title: 'Top 5 คะแนนสูงสุด', html: html, width: 500, confirmButtonText: 'ปิด' });
+                } else {
+                    Swal.fire('ผิดพลาด', 'รหัสผ่านไม่ถูกต้อง', 'error');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
