@@ -355,7 +355,7 @@
 
         function startTimer() {
             clearInterval(timerInterval);
-            timeLeft = 15;
+            timeLeft = 30;
             const timerEl = document.getElementById('timer-container');
             timerEl.innerText = timeLeft;
             timerEl.classList.remove('timer-warning');
@@ -363,7 +363,7 @@
             timerInterval = setInterval(() => {
                 timeLeft--;
                 timerEl.innerText = timeLeft;
-                if (timeLeft <= 5) timerEl.classList.add('timer-warning');
+                if (timeLeft <= 10) timerEl.classList.add('timer-warning');
                 
                 if (timeLeft <= 0) {
                     clearInterval(timerInterval);
