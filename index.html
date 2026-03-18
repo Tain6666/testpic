@@ -22,7 +22,7 @@
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzVDqR_x-T6IfTphgt3jNP6eqNOppCwVwYMoMm1y-f-Mmfb-wm31yHh3uwqSyywuf7E/exec"; // <<< เปลี่ยนตรงนี้
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzVDqR_x-T6IfTphgt3jNP6eqNOppCwVwYMoMm1y-f-Mmfb-wm31yHh3uwqSyywuf7E/exec"; // <<< เปลี่ยนตรงนี้เป็น URL ใหม่ของคุณ
     </script>
 
     <div id="app-container" class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6 relative">
@@ -45,17 +45,22 @@
         <div id="page-dashboard" class="hidden text-center">
             <h2 class="text-xl font-bold text-gray-800 mb-2">ยินดีต้อนรับ</h2>
             <p id="user-info" class="text-gray-600 mb-6"></p>
-            
             <button id="btn-start" onclick="startTest()" class="w-full bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600 transition mb-4">เริ่มทำข้อสอบ</button>
             <button id="btn-check-score" onclick="showMyScore()" class="w-full bg-blue-100 text-blue-700 font-bold py-3 rounded-lg hover:bg-blue-200 transition hidden">ดูคะแนนของฉัน</button>
         </div>
 
         <div id="page-quiz" class="hidden">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex justify-between items-center mb-4">
                 <span id="q-counter" class="text-gray-500 font-semibold">ข้อที่ 1/30</span>
                 <div id="timer" class="timer-circle">15</div>
             </div>
-            <h3 id="q-text" class="text-lg font-bold text-gray-800 mb-6 leading-relaxed"></h3>
+            
+            <div id="q-image-container" class="mb-4 hidden">
+                <img id="q-image" src="" alt="รูปประกอบข้อสอบ" class="w-full h-48 object-contain bg-gray-100 rounded-xl border">
+            </div>
+
+            <h3 id="q-text" class="text-lg font-bold text-gray-800 mb-4 leading-relaxed"></h3>
+            
             <div id="choices-container" class="space-y-3">
                 </div>
         </div>
@@ -74,7 +79,6 @@
     <button onclick="openLeaderboard()" class="mt-8 text-gray-400 text-sm hover:text-gray-600 underline">ตรวจสอบอันดับ (แอดมิน)</button>
 
     <script>
-        // State Variables
         let user = { name: '', phone: '', score: 0 };
         let questions = [];
         let currentQIndex = 0;
@@ -82,14 +86,12 @@
         let timerInterval;
         let timeLeft = 15;
 
-        // Utility: Fetch ข้อมูลจาก GAS
         async function fetchGAS(action, data = {}) {
             data.action = action;
             const params = new URLSearchParams(data);
             try {
                 const response = await fetch(GAS_URL, {
-                    method: 'POST',
-                    body: params,
+                    method: 'POST', body: params,
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
                 });
                 return await response.json();
@@ -100,7 +102,6 @@
             }
         }
 
-        // หน้า UI สลับการแสดงผล
         function showPage(pageId) {
             ['page-login', 'page-dashboard', 'page-quiz', 'page-result'].forEach(id => {
                 document.getElementById(id).classList.add('hidden');
@@ -108,7 +109,6 @@
             document.getElementById(pageId).classList.remove('hidden');
         }
 
-        // 1. ตรวจสอบ LocalStorage ตอนโหลดหน้า
         window.onload = () => {
             const savedUser = localStorage.getItem('quizUser');
             if (savedUser) {
@@ -117,13 +117,12 @@
             }
         };
 
-        // 2. ล็อกอิน
         async function login() {
             const name = document.getElementById('inp-name').value.trim();
             const phone = document.getElementById('inp-phone').value.trim();
             
             if (!name || !phone) return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบ', 'warning');
-            if (!/^0\d{9}$/.test(phone)) return Swal.fire('แจ้งเตือน', 'เบอร์โทรต้องมี 10 หลักและขึ้นต้นด้วย 0', 'warning');
+            if (!/^0\d{9}$/.test(phone)) return Swal.fire('แจ้งเตือน', 'เบอร์โทรต้องมี 10 หลัก', 'warning');
 
             Swal.fire({ title: 'กำลังเข้าสู่ระบบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
             
@@ -175,7 +174,6 @@
             showPage('page-result');
         }
 
-        // 3. เริ่มทำข้อสอบ
         async function startTest() {
             Swal.fire({ title: 'กำลังโหลดข้อสอบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
             const res = await fetchGAS('getQuestions');
@@ -199,6 +197,17 @@
             document.getElementById('q-counter').innerText = `ข้อที่ ${currentQIndex + 1}/${questions.length}`;
             document.getElementById('q-text').innerText = q.question;
             
+            // จัดการรูปภาพ (ถ้ามีรูประบบจะแสดงผล ถ้าไม่มีจะซ่อนทิ้ง)
+            const imgContainer = document.getElementById('q-image-container');
+            const imgEl = document.getElementById('q-image');
+            if (q.image && q.image.trim() !== '') {
+                imgEl.src = q.image;
+                imgContainer.classList.remove('hidden');
+            } else {
+                imgEl.src = '';
+                imgContainer.classList.add('hidden');
+            }
+            
             const container = document.getElementById('choices-container');
             container.innerHTML = '';
             
@@ -215,7 +224,7 @@
 
         function startTimer() {
             clearInterval(timerInterval);
-            timeLeft = 15;
+            timeLeft = 30;
             const timerEl = document.getElementById('timer');
             timerEl.innerText = timeLeft;
             timerEl.classList.remove('timer-warning');
@@ -223,7 +232,7 @@
             timerInterval = setInterval(() => {
                 timeLeft--;
                 timerEl.innerText = timeLeft;
-                if (timeLeft <= 5) timerEl.classList.add('timer-warning');
+                if (timeLeft <= 10) timerEl.classList.add('timer-warning');
                 
                 if (timeLeft <= 0) {
                     clearInterval(timerInterval);
@@ -245,7 +254,6 @@
             renderQuestion();
         }
 
-        // 4. จบข้อสอบและส่งคะแนน
         async function finishTest() {
             Swal.fire({ title: 'กำลังบันทึกคะแนน...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
             const res = await fetchGAS('saveScore', { name: user.name, phone: user.phone, score: score });
@@ -259,13 +267,10 @@
             }
         }
 
-        // 5. ระบบ Leaderboard แอดมิน
         async function openLeaderboard() {
             const { value: password } = await Swal.fire({
-                title: 'รหัสผ่านแอดมิน',
-                input: 'password',
-                inputPlaceholder: 'กรอกรหัสผ่านเพื่อดูคะแนน',
-                showCancelButton: true
+                title: 'รหัสผ่านแอดมิน', input: 'password',
+                inputPlaceholder: 'กรอกรหัสผ่านเพื่อดูคะแนน', showCancelButton: true
             });
 
             if (password) {
@@ -284,7 +289,7 @@
                             </div>
                             <div class="flex items-center space-x-3">
                                 <span class="font-bold text-blue-600">${u.score} คะแนน</span>
-                                <button onclick="document.getElementById('name-${i}').classList.remove('blur-sm', 'text-gray-400')" class="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300">เปิดดูชื่อ</button>
+                                <button onclick="document.getElementById('name-${i}').classList.remove('blur-sm', 'text-gray-400')" class="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300">เปิดดู</button>
                             </div>
                         </div>`;
                     });
